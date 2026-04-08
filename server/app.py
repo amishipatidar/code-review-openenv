@@ -1,11 +1,10 @@
 """
-FastAPI server — exposes the CodeReviewEnv as an HTTP API.
+FastAPI app for Code Review OpenEnv
 """
 from fastapi import FastAPI, HTTPException, Body
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional
-import uvicorn
 
 from env.environment import CodeReviewEnv
 from env.models import Action
@@ -50,10 +49,9 @@ def tasks():
     return list_tasks()
 
 
-# ✅ FIXED RESET ENDPOINT (final)
+# ✅ reset supports empty body
 @app.post("/reset")
 def reset(req: Optional[ResetRequest] = Body(None)):
-    # Default task if no request body is provided
     task_id = "easy_off_by_one"
 
     if req and req.task_id:
@@ -109,5 +107,11 @@ def close(session_id: str):
     return {"final_score": final_score}
 
 
+# ✅ REQUIRED for OpenEnv
+def main():
+    import uvicorn
+    uvicorn.run("server.app:app", host="0.0.0.0", port=7860)
+
+
 if __name__ == "__main__":
-    uvicorn.run("server.app:app", host="0.0.0.0", port=7860, reload=False)
+    main()

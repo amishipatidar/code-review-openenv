@@ -1,0 +1,11 @@
+[project]
+name = "code-review-openenv"
+version = "0.1.0"
+description = "OpenEnv Code Review Environment"
+requires-python = ">=3.9"
+
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "pydantic",
+]

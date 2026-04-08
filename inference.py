@@ -5,38 +5,55 @@ from openai import OpenAI
 
 API_BASE_URL = os.getenv("API_BASE_URL", "https://api.openai.com/v1")
 MODEL_NAME   = os.getenv("MODEL_NAME", "gpt-4.1-mini")
-HF_TOKEN     = os.getenv("HF_TOKEN")
 ENV_URL      = os.getenv("ENV_URL", "http://localhost:7860")
 
-# ✅ FIX: don't crash if token missing
-if not HF_TOKEN:
-    HF_TOKEN = "dummy_key"
+# ❌ DO NOT initialize client globally
+client = None
 
-# ✅ FIX: safe client creation
-try:
-    client = OpenAI(base_url=API_BASE_URL, api_key=HF_TOKEN)
-except Exception as e:
-    print(f"[ERROR] Failed to initialize client: {e}")
-    client = None
 
-SYSTEM_PROMPT = """\
-You are an expert code reviewer. Identify bugs, suggest fixes, and rate code quality.
-Always respond in valid JSON.
-"""
+# ✅ Safe client getter
+def get_client():
+    global client
 
+    if client is not None:
+        return client
+
+    try:
+        token = os.getenv("HF_TOKEN") or "dummy_key"
+
+        client = OpenAI(
+            base_url=API_BASE_URL,
+            api_key=token
+        )
+    except Exception as e:
+        print(f"[ERROR] OpenAI init failed: {e}")
+        client = None
+
+    return client
+
+
+# ✅ Safe LLM call
 def call_llm(messages: list) -> str:
     try:
-        response = client.chat.completions.create(
+        cli = get_client()
+
+        if cli is None:
+            return '{"line_number": 1, "description": "fallback"}'
+
+        response = cli.chat.completions.create(
             model=MODEL_NAME,
             messages=messages,
             temperature=0.2,
-            max_tokens=512,
+            max_tokens=256,
         )
+
         return response.choices[0].message.content.strip()
+
     except Exception:
-        # fallback dummy JSON to prevent crash
         return '{"line_number": 1, "description": "fallback"}'
 
+
+# ✅ Safe JSON parsing
 def parse_json(text: str) -> dict:
     try:
         text = text.strip()
@@ -49,10 +66,12 @@ def parse_json(text: str) -> dict:
     except Exception:
         return {}
 
+
 def safe_error(err):
     if err is None:
         return "null"
     return str(err).replace("\n", " ").replace("\r", " ")
+
 
 def run_episode(task_id: str):
     step_n = 0
@@ -63,15 +82,14 @@ def run_episode(task_id: str):
         # RESET
         resp = requests.post(f"{ENV_URL}/reset", json={"task_id": task_id})
         resp.raise_for_status()
-        data = resp.json()
 
+        data = resp.json()
         session_id = data["session_id"]
-        obs = data["observation"]
 
         print(f"[START] task={task_id} env=code-review model={MODEL_NAME}", flush=True)
 
         # STEP 1
-        raw = call_llm([{"role": "user", "content": "find bug"}])
+        raw = call_llm([{"role": "user", "content": "identify bug"}])
         parsed = parse_json(raw)
 
         res = requests.post(f"{ENV_URL}/step", json={

@@ -1,0 +1,84 @@
+name: code-review-env
+version: "1.0.0"
+description: >
+  A real-world code review environment where an LLM agent must identify bugs,
+  suggest fixes, and rate code quality across three Python snippets of
+  increasing difficulty (easy → medium → hard).
+tags:
+  - openenv
+  - code-review
+  - software-engineering
+  - llm-agent
+
+entry_point: server:app
+
+tasks:
+  - id: easy_off_by_one
+    difficulty: easy
+    description: Find an off-by-one error in a list summation function.
+    max_steps: 5
+    reward_threshold: 0.5
+
+  - id: medium_logic_error
+    difficulty: medium
+    description: Find a logic error in a prime-number generator.
+    max_steps: 6
+    reward_threshold: 0.5
+
+  - id: hard_security_flaw
+    difficulty: hard
+    description: Identify a SQL injection vulnerability in a Flask route handler.
+    max_steps: 7
+    reward_threshold: 0.5
+
+action_space:
+  type: discrete
+  actions:
+    - name: identify_bug
+      params: [line_number, description]
+    - name: suggest_fix
+      params: [fixed_code]
+    - name: rate_quality
+      params: [quality_score]
+    - name: submit
+      params: []
+
+observation_space:
+  fields:
+    - name: task_id
+      type: str
+    - name: task_description
+      type: str
+    - name: snippet
+      type: object
+      fields: [language, filename, code]
+    - name: step
+      type: int
+    - name: max_steps
+      type: int
+    - name: current_review
+      type: object
+    - name: feedback
+      type: str
+
+reward:
+  min: -1.0
+  max: 1.0
+  incremental: true
+  penalties:
+    - reason: repeated_action
+      value: -0.05
+    - reason: invalid_action
+      value: -0.05
+    - reason: wasted_step
+      value: -0.02
+
+api_endpoints:
+  - GET  /
+  - GET  /tasks
+  - POST /reset
+  - POST /step
+  - GET  /state/{session_id}
+  - POST /close/{session_id}
+
+author: OpenEnv Hackathon Submission

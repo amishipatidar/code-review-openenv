@@ -39,7 +39,7 @@ class StepRequest(BaseModel):
 
 @app.get("/")
 def root():
-    return {"message": "Code Review OpenEnv is running 🚀", "tasks": list_tasks()}
+    return {"message": "Code Review OpenEnv is running", "tasks": list_tasks()}
 
 
 @app.get("/tasks")
@@ -47,13 +47,25 @@ def tasks():
     return list_tasks()
 
 
+# ✅ FIXED RESET ENDPOINT
 @app.post("/reset")
-def reset(req: ResetRequest):
-    env = CodeReviewEnv(task_id=req.task_id)
+def reset(req: Optional[ResetRequest] = None):
+    # Default task if no request body is provided
+    task_id = "easy_off_by_one"
+
+    if req and req.task_id:
+        task_id = req.task_id
+
+    env = CodeReviewEnv(task_id=task_id)
     obs = env.reset()
-    session_id = req.task_id  # simple 1:1 mapping for hackathon
+
+    session_id = task_id  # simple mapping
     _sessions[session_id] = env
-    return {"session_id": session_id, "observation": obs.model_dump()}
+
+    return {
+        "session_id": session_id,
+        "observation": obs.model_dump()
+    }
 
 
 @app.post("/step")

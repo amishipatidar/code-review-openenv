@@ -1,10 +1,11 @@
 """
-FastAPI app for Code Review OpenEnv
+FastAPI server — exposes the CodeReviewEnv as an HTTP API.
 """
-from fastapi import FastAPI, HTTPException, Body
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional
+import uvicorn
 
 from env.environment import CodeReviewEnv
 from env.models import Action
@@ -19,7 +20,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# In-memory session store
+# In-memory session store (single-session for hackathon purposes)
 _sessions: dict[str, CodeReviewEnv] = {}
 
 
@@ -38,10 +39,7 @@ class StepRequest(BaseModel):
 
 @app.get("/")
 def root():
-    return {
-        "message": "Code Review OpenEnv is running",
-        "tasks": list_tasks()
-    }
+    return {"message": "Code Review OpenEnv is running 🚀", "tasks": list_tasks()}
 
 
 @app.get("/tasks")
@@ -49,24 +47,13 @@ def tasks():
     return list_tasks()
 
 
-# ✅ reset supports empty body
 @app.post("/reset")
-def reset(req: Optional[ResetRequest] = Body(None)):
-    task_id = "easy_off_by_one"
-
-    if req and req.task_id:
-        task_id = req.task_id
-
-    env = CodeReviewEnv(task_id=task_id)
+def reset(req: ResetRequest):
+    env = CodeReviewEnv(task_id=req.task_id)
     obs = env.reset()
-
-    session_id = task_id
+    session_id = req.task_id  # simple 1:1 mapping for hackathon
     _sessions[session_id] = env
-
-    return {
-        "session_id": session_id,
-        "observation": obs.model_dump()
-    }
+    return {"session_id": session_id, "observation": obs.model_dump()}
 
 
 @app.post("/step")
@@ -82,7 +69,6 @@ def step(req: StepRequest):
         fixed_code=req.fixed_code,
         quality_score=req.quality_score,
     )
-
     result = env.step(action)
     return result.model_dump()
 
@@ -100,18 +86,11 @@ def close(session_id: str):
     env = _sessions.get(session_id)
     if env is None:
         raise HTTPException(status_code=404, detail="Session not found.")
-
     final_score = env.close()
+    final_score = round(max(0.01, min(0.99, final_score)), 4)
     del _sessions[session_id]
-
     return {"final_score": final_score}
 
 
-# ✅ REQUIRED for OpenEnv
-def main():
-    import uvicorn
-    uvicorn.run("server.app:app", host="0.0.0.0", port=7860)
-
-
 if __name__ == "__main__":
-    main()
+    uvicorn.run("server:app", host="0.0.0.0", port=7860, reload=False)

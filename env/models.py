@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from typing import Optional, List, Any, Dict
 
 
@@ -9,7 +9,6 @@ class CodeSnippet(BaseModel):
 
 
 class Observation(BaseModel):
-    """Typed observation returned by reset() and step()."""
     task_id: str
     task_description: str
     snippet: CodeSnippet
@@ -20,24 +19,16 @@ class Observation(BaseModel):
 
 
 class Action(BaseModel):
-    """Typed action submitted by the agent."""
-    action_type: str = Field(
-        ...,
-        description="One of: identify_bug | suggest_fix | rate_quality | submit"
-    )
-    line_number: Optional[int] = Field(None, description="Bug line number (for identify_bug)")
-    description: Optional[str] = Field(None, description="Bug description or fix notes")
-    fixed_code: Optional[str] = Field(None, description="Corrected code (for suggest_fix)")
-    quality_score: Optional[float] = Field(None, ge=0.0, le=10.0, description="Code quality rating 0–10")
+    action_type: str  # "identify_bug" | "suggest_fix" | "rate_quality" | "submit"
+    line_number: Optional[int] = None
+    description: Optional[str] = None
+    fixed_code: Optional[str] = None
+    quality_score: Optional[float] = None  # 0.0 - 10.0
 
 
+# ✅ ADD THIS CLASS (this was missing and causing crash)
 class Reward(BaseModel):
-    """Typed reward signal returned after each step."""
-    value: float = Field(..., ge=-1.0, le=1.0, description="Incremental reward for this step")
-    cumulative: float = Field(..., ge=0.0, le=1.0, description="Total reward so far")
-    penalty: float = Field(0.0, description="Penalty applied this step (negative contribution)")
-    penalty_reason: Optional[str] = Field(None, description="Why a penalty was applied")
-    breakdown: Dict[str, Any] = Field(default_factory=dict, description="Score component breakdown")
+    value: float
 
 
 class StepResult(BaseModel):

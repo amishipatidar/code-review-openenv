@@ -2,9 +2,13 @@ import os
 import json
 import requests
 
-API_BASE_URL = os.getenv("API_BASE_URL", "https://api.openai.com/v1")
-MODEL_NAME   = os.getenv("MODEL_NAME", "gpt-4.1-mini")
-ENV_URL      = os.getenv("ENV_URL", "http://localhost:7860")
+# ✅ FIX: Use Hugging Face Space instead of localhost
+ENV_URL = os.getenv(
+    "ENV_URL",
+    "https://amishipatidar-code-review-env-v2.hf.space"
+)
+
+MODEL_NAME = os.getenv("MODEL_NAME", "gpt-4.1-mini")
 
 
 def safe_error(err):
@@ -28,7 +32,7 @@ def run_episode(task_id: str):
 
         print(f"[START] task={task_id} env=code-review model={MODEL_NAME}", flush=True)
 
-        # STEP 1 - identify_bug
+        # STEP 1
         res = requests.post(f"{ENV_URL}/step", json={
             "session_id": session_id,
             "action_type": "identify_bug",
@@ -45,7 +49,7 @@ def run_episode(task_id: str):
             success = sum(rewards) > 0.5
             return
 
-        # STEP 2 - suggest_fix
+        # STEP 2
         res2 = requests.post(f"{ENV_URL}/step", json={
             "session_id": session_id,
             "action_type": "suggest_fix",
@@ -61,7 +65,7 @@ def run_episode(task_id: str):
             success = sum(rewards) > 0.5
             return
 
-        # STEP 3 - rate_quality
+        # STEP 3
         res3 = requests.post(f"{ENV_URL}/step", json={
             "session_id": session_id,
             "action_type": "rate_quality",
@@ -73,7 +77,7 @@ def run_episode(task_id: str):
 
         print(f"[STEP] step={step_n} action=rate_quality(...) reward={rewards[-1]:.2f} done={str(res3.get('done')).lower()} error=null", flush=True)
 
-        # STEP 4 - submit
+        # STEP 4
         res4 = requests.post(f"{ENV_URL}/step", json={
             "session_id": session_id,
             "action_type": "submit"

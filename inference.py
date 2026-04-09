@@ -141,7 +141,7 @@ def run_episode(task_id: str) -> dict:
     step_n += 1
     reward1  = result1.get("reward", 0.0)
     done     = result1.get("done", False)
-    rewards.append(reward1)
+    rewards.append(max(0.01, min(0.99, reward1)) if reward1 is not None else 0.01)
     action_str1 = f"identify_bug(line={payload1.get('line_number','?')})"
     error_str1  = last_error or result1.get("error") or "null"
     print(f"[STEP] step={step_n} action={action_str1} reward={reward1:.2f} done={str(done).lower()} error={error_str1}", flush=True)
@@ -179,7 +179,7 @@ def run_episode(task_id: str) -> dict:
     step_n += 1
     reward2  = result2.get("reward", 0.0)
     done     = result2.get("done", False)
-    rewards.append(reward2)
+    rewards.append(max(0.01, min(0.99, reward2)) if reward2 is not None else 0.01)
     error_str2 = last_error or result2.get("error") or "null"
     print(f"[STEP] step={step_n} action=suggest_fix(code=...) reward={reward2:.2f} done={str(done).lower()} error={error_str2}", flush=True)
 
@@ -218,7 +218,7 @@ def run_episode(task_id: str) -> dict:
     step_n += 1
     reward3  = result3.get("reward", 0.0)
     done     = result3.get("done", False)
-    rewards.append(reward3)
+    rewards.append(max(0.01, min(0.99, reward3)) if reward3 is not None else 0.01)
     score_used = payload3.get("quality_score", 5.0)
     error_str3 = last_error or result3.get("error") or "null"
     print(f"[STEP] step={step_n} action=rate_quality(score={score_used}) reward={reward3:.2f} done={str(done).lower()} error={error_str3}", flush=True)
@@ -228,7 +228,7 @@ def run_episode(task_id: str) -> dict:
     step_n += 1
     reward4  = result4.get("reward", 0.0)
     done     = result4.get("done", True)
-    rewards.append(reward4)
+    rewards.append(max(0.01, min(0.99, reward4)) if reward4 is not None else 0.01)
     print(f"[STEP] step={step_n} action=submit() reward={reward4:.2f} done={str(done).lower()} error=null", flush=True)
 
     # ── Close ────────────────────────────────────────────────────────────────
@@ -238,6 +238,7 @@ def run_episode(task_id: str) -> dict:
     except Exception:
         final_score = sum(rewards)
 
+    final_score = max(0.01, min(0.99, final_score))
     success = final_score >= 0.5
     print(f"[END] success={str(success).lower()} steps={step_n} rewards={','.join(f'{r:.2f}' for r in rewards)}", flush=True)
     return {"task_id": task_id, "success": success, "steps": step_n,
@@ -253,7 +254,7 @@ if __name__ == "__main__":
             result = run_episode(tid)
         except Exception as e:
             # Always emit [END] even on unexpected crash
-            print(f"[END] success=false steps=0 rewards=0.00", flush=True)
+            print(f"[END] success=false steps=0 rewards=0.01", flush=True)
             result = {"task_id": tid, "success": False, "steps": 0,
                       "rewards": [], "error": str(e)}
         results.append(result)

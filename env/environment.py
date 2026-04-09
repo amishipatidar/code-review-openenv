@@ -1,10 +1,6 @@
 """
 Code Review Environment — OpenEnv-compliant implementation.
-
-Implements: reset() → Observation
-            step(Action) → (Observation, reward, done, info)
-            state() → dict
-            close() → float
+All reward values are clamped strictly within (0.0, 1.0).
 """
 import copy
 from typing import Optional
@@ -12,10 +8,14 @@ from env.models import Observation, Action, Reward, StepResult, TaskConfig
 from env.tasks import get_task
 from env.graders import compute_total_reward, final_grade
 
-# Penalty constants
-PENALTY_REPEATED_ACTION  = -0.05
-PENALTY_INVALID_ACTION   = -0.05
-PENALTY_WASTED_STEP      = -0.02
+PENALTY_REPEATED_ACTION = -0.05
+PENALTY_INVALID_ACTION  = -0.05
+PENALTY_WASTED_STEP     = -0.02
+
+
+def _clamp_reward(value: float) -> float:
+    """Clamp any reward to strictly (0.01, 0.99) — never 0.0 or 1.0."""
+    return round(max(0.01, min(0.99, value)), 4)
 
 
 class CodeReviewEnv:
@@ -24,27 +24,27 @@ class CodeReviewEnv:
         self._step: int = 0
         self._done: bool = False
         self._review: dict = {}
-        self._last_reward: float = 0.0
+        self._last_reward: float = 0.01
         self._reward_history: list = []
         self._action_counts: dict = {}
         self._invalid_count: int = 0
 
     def reset(self) -> Observation:
-        """Reset environment and return initial observation."""
         self._step = 0
         self._done = False
         self._review = {}
-        self._last_reward = 0.0
+        self._last_reward = 0.01
         self._reward_history = []
         self._action_counts = {}
         self._invalid_count = 0
         return self._make_observation(feedback="Task started. Begin your code review.")
 
     def step(self, action: Action) -> StepResult:
-        """Apply action, compute reward with penalties, return StepResult."""
+        """Apply action and return StepResult. All rewards strictly within (0.0, 1.0)."""
         if self._done:
             obs = self._make_observation(feedback="Episode already finished.")
-            return StepResult(observation=obs, reward=0.0, done=True, info={})
+            safe_reward = _clamp_reward(self._last_reward)
+            return StepResult(observation=obs, reward=safe_reward, done=True, info={})
 
         self._step += 1
         penalty = 0.0
@@ -54,27 +54,29 @@ class CodeReviewEnv:
 
         if atype not in valid_actions:
             penalty = PENALTY_INVALID_ACTION
-            penalty_reason = f"Invalid action '{atype}'. Penalty: {PENALTY_INVALID_ACTION}."
+            penalty_reason = f"Invalid action '{atype}'. Penalty applied."
             self._invalid_count += 1
             if self._invalid_count >= 3:
                 self._done = True
-                feedback = "Too many invalid actions. Episode terminated early."
-                obs = self._make_observation(feedback=feedback)
-                self._reward_history.append(penalty)
-                reward_obj = Reward(value=penalty, cumulative=max(self._last_reward + penalty, 0.0),
-                                    penalty=penalty, penalty_reason=penalty_reason, breakdown={})
-                return StepResult(observation=obs, reward=penalty, done=True,
+                obs = self._make_observation(feedback="Too many invalid actions. Episode terminated.")
+                safe_reward = _clamp_reward(self._last_reward + penalty)
+                self._reward_history.append(safe_reward)
+                reward_obj = Reward(
+                    value=safe_reward, cumulative=safe_reward,
+                    penalty=_clamp_reward(abs(penalty)),
+                    penalty_reason=penalty_reason, breakdown={}
+                )
+                return StepResult(observation=obs, reward=safe_reward, done=True,
                                   info={"reward_obj": reward_obj.model_dump()})
         else:
             self._action_counts[atype] = self._action_counts.get(atype, 0) + 1
             if self._action_counts[atype] > 1 and atype != "submit":
                 penalty = PENALTY_REPEATED_ACTION
-                penalty_reason = f"Repeated action '{atype}'. Penalty: {PENALTY_REPEATED_ACTION}."
-
+                penalty_reason = f"Repeated action '{atype}'."
             review_complete = all(k in self._review for k in ["bug_line", "fix", "quality_score"])
             if review_complete and atype != "submit":
                 penalty = min(penalty, PENALTY_WASTED_STEP)
-                penalty_reason = (penalty_reason or "") + f" Wasted step. Penalty: {PENALTY_WASTED_STEP}."
+                penalty_reason = (penalty_reason or "") + " Wasted step."
 
         feedback = self._apply_action(action)
         if penalty_reason:
@@ -83,8 +85,11 @@ class CodeReviewEnv:
         base_reward, breakdown = compute_total_reward(
             self.task, self._review, self._step, self.task.max_steps
         )
-        incremental = round(base_reward - self._last_reward + penalty, 2)
-        self._last_reward = max(base_reward, 0.0)
+
+        # Always clamp — never allow 0.0 or 1.0
+        base_reward = _clamp_reward(base_reward)
+        incremental = _clamp_reward(base_reward - self._last_reward + penalty)
+        self._last_reward = base_reward
         self._reward_history.append(incremental)
 
         if atype == "submit" or self._step >= self.task.max_steps:
@@ -93,18 +98,19 @@ class CodeReviewEnv:
         obs = self._make_observation(feedback=feedback)
         reward_obj = Reward(
             value=incremental,
-            cumulative=round(self._last_reward, 2),
-            penalty=round(penalty, 2),
+            cumulative=_clamp_reward(self._last_reward),
+            penalty=_clamp_reward(abs(penalty)) if penalty < 0 else 0.0,
             penalty_reason=penalty_reason,
             breakdown=breakdown,
         )
         return StepResult(
-            observation=obs, reward=incremental, done=self._done,
+            observation=obs,
+            reward=incremental,
+            done=self._done,
             info={"reward_obj": reward_obj.model_dump(), "cumulative_reward": self._last_reward},
         )
 
     def state(self) -> dict:
-        """Return full current state snapshot."""
         return {
             "task_id": self.task.task_id,
             "difficulty": self.task.difficulty,
@@ -112,31 +118,31 @@ class CodeReviewEnv:
             "max_steps": self.task.max_steps,
             "done": self._done,
             "review": copy.deepcopy(self._review),
-            "cumulative_reward": self._last_reward,
-            "reward_history": list(self._reward_history),
+            "cumulative_reward": _clamp_reward(self._last_reward),
+            "reward_history": [_clamp_reward(r) for r in self._reward_history],
             "action_counts": dict(self._action_counts),
             "invalid_count": self._invalid_count,
         }
 
     def close(self) -> float:
-        """Finalise and return final 0.0–1.0 score."""
         self._done = True
-        return final_grade(self.task, self._review, self._step, self.task.max_steps)
+        return _clamp_reward(
+            final_grade(self.task, self._review, self._step, self.task.max_steps)
+        )
 
     def _apply_action(self, action: Action) -> str:
         atype = action.action_type
         if atype == "identify_bug":
             self._review["bug_line"] = action.line_number
             self._review["bug_description"] = action.description or ""
-            return (f"Bug recorded at line {action.line_number}. "
-                    "Next: suggest_fix.")
+            return f"Bug recorded at line {action.line_number}. Next: suggest_fix."
         elif atype == "suggest_fix":
             self._review["fix"] = action.fixed_code or action.description or ""
-            return "Fix recorded. Next: rate_quality (0–10)."
+            return "Fix recorded. Next: rate_quality (0-10)."
         elif atype == "rate_quality":
             score = action.quality_score
             if score is None or not (0.0 <= float(score) <= 10.0):
-                return "Invalid score. Must be 0.0–10.0."
+                return "Invalid score. Must be 0.0-10.0."
             self._review["quality_score"] = score
             return f"Quality {score}/10 recorded. Next: submit."
         elif atype == "submit":
